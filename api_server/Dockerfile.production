@@ -1,0 +1,15 @@
+FROM golang:1.11.1 as builder
+
+WORKDIR /api_server
+
+COPY . .
+ENV GO111MODULE=on
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo .
+
+
+FROM alpine:latest
+
+WORKDIR /app
+COPY --from=builder /api_server/api_server .
+
+CMD ["./go_elastic_starter"]

@@ -1,0 +1,10 @@
+.git
+.gitignore
+Makefile
+README.md
+go_elastic_starter
+go.sum
+api.log
+
+tmp/
+.codeclimate.yml
