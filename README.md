@@ -6,7 +6,9 @@
 
 <img src="img/cover.png">
 
-Docker + Go言語 + Elasticsearch でAPIを作っているのですが、Elasticsearchの便利さはもちろん、BI環境の構築をする際にそのスムーズさに感動したので、今回はGo言語での開発を例にハンズオン形式で紹介します。Dockerで立ち上げて、Elasticsearchで作るCluster構成や、LogstashによるBI環境の立て方を学びます。
+この記事は Elastic stack Advent Calendarの12日目の記事となります。
+
+最近、実務で Docker + Go言語 + Elasticsearch でAPIを作っているのですが、Elasticsearchの便利さはもちろん、BI環境の構築をする際にそのスムーズさに感動したので、今回はGo言語での開発を例にBI環境の構築をハンズオン形式で紹介します。Dockerで立ち上げや、ElasticsearchのCluster構成や、LogstashによるBI環境の立て方、Slackへの通知等を学びます。
 
 コードはこちら
 
@@ -80,7 +82,13 @@ discovery.zen.minimum_master_nodes: 2
 
 elasticsearch.yml では クラスタや各ノード等の設定が可能です。今回はDockerでElasticsearchのクラスターを組むので、各ノードの個別の設定はdocker-compose.ymlで渡すことができるので、ここでは一旦共通の設定のみ行います。
 
-そしてログ出力に関する設定を行います。log4j2.propertiesを作ります。
+今回は 3つの ```master-eligible``` と呼ばれるノードを立てます。ノードにはいろんな種類があるのですが、このノードは簡単に言うと Mastr になる候補になれるノードです。
+
+```discovery.zen.minimum_master_nodes``` の値は ```(ノードの数 / 2) + 1 ```が推奨されています。例えば3つのmaster-eligibleノードでクラスタを組んだ際に、クラスタ内でネットワーク分断が起きた際、分断後のノード間で別々にクラスタを組み直してしまいます。ここの値は何個のノードが集まったらclusterを構成するかの値です。これで分断された1つのノードがmasterに昇格しなくなります。詳しい解説は下記が参考になります。
+
+https://blog.tiqwab.com/2018/01/27/understanding-split-brain-with-docker-compose.html
+
+そしてログ出力に関する設定を行います。Elasticseardh では log4j2.properties というファイルを使います。
 
 ```properties
 status = error
@@ -94,7 +102,7 @@ rootLogger.level = info
 rootLogger.appenderRef.console.ref = console
 ```
 
-そして docker-compose.ymlに下記を追加します。
+これでログの設定ができました。そして docker-compose.ymlに下記を追加します。
 
 ```yml
 version: '3.6'
@@ -144,7 +152,9 @@ services:
             - ./elasticsearch/config/log4j2.properties:/usr/share/elasticsearch/config/log4j2.properties
 ```
 
-各ノードの設定は環境変数で渡します。
+各ノードの設定は環境変数で渡します。ノードの名前やクラスター名を指定しています。(今回は省略していますが、ここでJVMヒープサイズの設定もできます。ファイルで渡すのであれば ```jvm.options``` というファイルを作ります)
+
+これで準備が整いました！立ち上げでみましょう。
 
 ```bash
 # Elasticsearchクラスタ立ち上げ
@@ -190,7 +200,7 @@ services:
             - 5601:5601
 ```
 
-これで立ち上げましょう
+今回は設定はデフォルトのままで良いでしょう。これで立ち上げます。
 
 ```bash
 $ docker-compose up -d
@@ -206,7 +216,6 @@ http://localhost:5601 で Kibanaの画面が見れます。
 
 logstash ディレクトリを作り、Dockerfileを作りましょう。今回はSlackへの通知も行うので pluginを追加します。このセクションで下記のような構成ができます。
 
-```
 ```
 .
 ├── Makefile
@@ -224,7 +233,6 @@ logstash ディレクトリを作り、Dockerfileを作りましょう。今回�
     ├── Dockerfile
     └── logstash.conf
 ```
-```
 
 ```Dockerfile
 FROM docker.elastic.co/logstash/logstash:6.4.3
@@ -232,8 +240,8 @@ FROM docker.elastic.co/logstash/logstash:6.4.3
 RUN logstash-plugin install logstash-output-slack
 ```
 
-そして大事なlogstash.conf を作ります。Dockerfile と同じ階層におきます。
-output を elasticsearch と slack に設定しています。
+そして大事なlogstash.conf を作ります。先ほど作った ```Dockerfile``` と同じ階層におきます。
+ここで output を elasticsearch と slack に設定しています。
 
 ```conf
 input {
@@ -323,13 +331,7 @@ $ docker-compose down
     └── logstash.conf
 ```
 
-Go言語の開発環境を整えましょう。Go1.11以上を準備してください。そしてapi_serverディレクトリを作り、go.modを作ります。
-
-```go
-go mod init
-```
-
-そして同階層にmain.goを作ります。一旦 logging は設定しません。
+Go言語の開発環境を整えましょう。Go1.11以上を準備してください。そしてapi_serverディレクトリを作り、go.modを作り、同階層にmain.goを作ります。一旦 logging は設定しません。
 
 ```go
 package main // import "api_server"
@@ -353,7 +355,7 @@ func hello(w http.ResponseWriter, r *http.Request) {
 
 ```
 
-簡単ですね。がっつり開発していく前に Docker + fresh のホットリロード環境を作りましょう。
+簡単ですね。がっつり開発していく前に開発用の Docker + fresh のホットリロード環境を作りましょう。
 ここから解説しますが、詳しくは過去記事をご覧ください。
 
 [Go v1.11 + Docker + fresh でホットリロード開発環境を作って愉快なGo言語生活](https://qiita.com/po3rin/items/9acd41ef428436335c97)
@@ -371,8 +373,7 @@ ENV GO111MODULE=on
 RUN go get github.com/pilu/fresh
 ```
 
-このイメージでローカルでファイルを更新したらDockerコンテナ内でホットリロードできる環境が準備できました。
-```docker-compose.yml``` に記載を追加します。
+これでローカルでファイルを更新したらDockerコンテナ内でホットリロードできる環境が準備できました。起動コマンドの ```fresh``` は ```docker-compose.yml``` で宣言します。それでは```docker-compose.yml``` に記載を追加します。
 
 ```yml
 # ...
@@ -401,7 +402,7 @@ curl localhost:8080/
 Hello Elastic Stack
 ```
 
-これで開発環境が整いました！では早速 logger を設定しましょう。```main.go``` と同じ階層に ```logger/logger.go``` を作ります。
+これで開発環境が整いました！では本題の logger を設定しましょう。```main.go``` と同じ階層に ```logger/logger.go``` を作ります。
 
 ```go
 package logger
@@ -480,7 +481,7 @@ func hello(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-これでGo言語の実装は終了しました。しかし、まだやることがあります。実は Logstash がリクエストを受けつける前に Go言語で作ったAPIが Logstash に繋ぎにいってしまいます。これを回避するために Logstash の起動を待つスクリプトを書く必要があります。```api_server``` ディレクトリにスクリプトを追加しましょう。
+これでGo言語の実装は終了しました。しかし、まだやることがあります。実は Logstash がリクエストを受けつける前に Go言語で作ったAPIが Logstash に繋ぎにいってしまいエラーになります。これを回避するために Logstash の起動を待つスクリプトを書く必要があります。```api_server``` ディレクトリにスクリプトを追加しましょう。
 
 ```bash
 #!/bin/bash
@@ -539,6 +540,19 @@ Kibana にも log のデータが可視化できます。
 
 これで Go言語で APIサーバーを作る際の BI環境が整いました!
 
+## 今後の為のオススメの Elasticsearch 勉強方法
+
+これは僕がやっていた勉強方法ですが、Elasticsearch を学ぶ際は Kibana の Dev Tools + 公式Document が便利です。Kibana の 左メニューに Dev Tools があるのでここにドキュメントにある形をそのまま打てばクエリを走らせれます。
+
+```
+GET /_cat/health?v
+```
+
+もちろんドキュメントから curl としてもコピーできるのでローカルでも試せます！
+
+そして、今回は紹介しませんでしたが、このままGo言語から Elasticsearch につないでデータを保存することも可能です。Go言語で Elasticsearch を扱う際には下記のパッケージが便利です。
+https://github.com/olivere/elastic
+
 ## まとめ
 
-Elastic Stack も Docker のおけげで速攻で立ち上げることができて最高です。
+Elastic Stack も Docker のおかげで速攻で立ち上げることができて最高です。
